@@ -1,0 +1,15 @@
+[
+  {
+    "mode": "travel",
+    "motion": "dolly",
+    "frames": 161,
+    "distance": 2,
+    "prompt": "a quiet street in Manama at golden hour, every detail still",
+    "use_dmd": true
+  },
+  {
+    "mode": "animate",
+    "prompt": "the street comes to life: gentle traffic and pedestrians move, a flag sways, warm cinematic light",
+    "frames": 81
+  }
+]

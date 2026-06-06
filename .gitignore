@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Generated media & model weights (large; never commit)
+outputs/
+*.mp4
+*.log
+*.concat.txt
+Wan2.2-*/
+checkpoints/
+*.npz
+!**/examples/**/*.npz
+
+# Local env / secrets
+.env
+.DS_Store
+weights_download.log

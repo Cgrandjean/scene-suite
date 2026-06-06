@@ -1,0 +1,5 @@
+# scene-studio orchestrator deps. This runs in ITS OWN small env, separate from the
+# heavy model backends (Lyra, Wan) which bring their own stacks via their setup scripts.
+numpy>=1.24   # building camera trajectories for `travel`
+
+# Also required on PATH at runtime (for `chain` stitching): ffmpeg

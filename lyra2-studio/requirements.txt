@@ -1,0 +1,4 @@
+# lyra2-studio wrapper/CLI dependencies (host side).
+# These do NOT include Lyra 2.0 itself -- that is installed by scripts/setup_host.sh
+# (torch, flash-attn, transformer_engine, the vendored CUDA extensions, etc.).
+numpy>=1.24

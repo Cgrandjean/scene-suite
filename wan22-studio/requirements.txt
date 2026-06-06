@@ -1,0 +1,3 @@
+# wan22-studio's wrapper/CLI is pure Python stdlib -- nothing to install here.
+# Wan 2.2 itself (torch, flash_attn, diffusers deps, etc.) is installed on the GPU
+# host by scripts/setup_host.sh from the official Wan2.2 requirements.txt.

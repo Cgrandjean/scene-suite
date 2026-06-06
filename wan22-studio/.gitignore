@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Model weights & generated media (large; never commit)
+Wan2.2-*/
+checkpoints/
+outputs/
+*.mp4
+*.log
+
+# Local env
+.env
+.DS_Store

@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Generated media & weights (large; never commit)
+outputs/
+*.mp4
+*.npz
+!examples/**/*.npz
+*.png
+*.log
+*.concat.txt
+
+# Local env
+.env
+.DS_Store
