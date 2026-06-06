@@ -56,6 +56,8 @@ echo "== [4/4] Wan 2.2 requirements =="
 # falls back to torch's scaled_dot_product_attention when it's missing (just a warning).
 grep -viE 'flash[-_]attn' requirements.txt > /tmp/wan_req.txt
 pip install -r /tmp/wan_req.txt
+# Wan's code imports einops but its requirements.txt omits it.
+pip install einops
 
 echo "== [4b/4] flash_attn (optional speed-up; skipped if it can't build) =="
 # flash_attn needs nvcc + CUDA_HOME to compile from source. The CUDA devel base image
