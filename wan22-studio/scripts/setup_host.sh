@@ -27,6 +27,10 @@ fi
 # shellcheck disable=SC1091
 source "$(conda info --base)/etc/profile.d/conda.sh"
 
+# Newer conda requires accepting channel Terms of Service before creating envs.
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main 2>/dev/null || true
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r 2>/dev/null || true
+
 echo "== [1/4] Clone Wan2.2 into $CLONE_DIR =="
 mkdir -p "$CLONE_DIR"
 if [[ ! -d "$CLONE_DIR/Wan2.2/.git" ]]; then

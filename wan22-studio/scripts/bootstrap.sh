@@ -22,13 +22,15 @@ echo "   disk free at $PARENT: ${AVAIL_GB:-?}GB (need >=150)"
 [[ "${AVAIL_GB:-0}" -lt 150 ]] && echo "   WARNING: <150GB free; weights + env may not fit." >&2
 
 echo "== [1/5] Miniconda =="
-if ! command -v conda >/dev/null 2>&1; then
+if command -v conda >/dev/null 2>&1; then
+  # shellcheck disable=SC1091
+  source "$(conda info --base)/etc/profile.d/conda.sh"
+elif [[ -x "$HOME/miniconda3/bin/conda" ]]; then
+  eval "$("$HOME/miniconda3/bin/conda" shell.bash hook)"
+else
   curl -fsSL https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -o /tmp/miniconda.sh
   bash /tmp/miniconda.sh -b -p "$HOME/miniconda3"
   eval "$("$HOME/miniconda3/bin/conda" shell.bash hook)"
-else
-  # shellcheck disable=SC1091
-  source "$(conda info --base)/etc/profile.d/conda.sh"
 fi
 
 echo "== [2/5] Clone Wan2.2 (so the weight download has a target dir) =="
