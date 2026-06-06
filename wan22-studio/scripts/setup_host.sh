@@ -61,9 +61,12 @@ echo "== [4b/4] flash_attn (optional speed-up; skipped if it can't build) =="
 # flash_attn needs nvcc + CUDA_HOME to compile from source. The CUDA devel base image
 # ships it at /usr/local/cuda. If absent, we skip it -- generation still works (SDPA).
 CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
-if [[ -x "$CUDA_HOME/bin/nvcc" ]]; then
+if [[ "${WAN22_SKIP_FLASH:-0}" == "1" ]]; then
+  echo "   WAN22_SKIP_FLASH=1 -> skipping flash_attn (Wan uses SDPA fallback)."
+elif [[ -x "$CUDA_HOME/bin/nvcc" ]]; then
   export CUDA_HOME
   export PATH="$CUDA_HOME/bin:$PATH"
+  echo "   building flash_attn (this can take 10-20 min; set WAN22_SKIP_FLASH=1 to skip)..."
   MAX_JOBS="${MAX_JOBS:-$(nproc)}" pip install flash_attn --no-build-isolation \
     && echo "   flash_attn installed." \
     || echo "   flash_attn failed to build -- continuing WITHOUT it (Wan uses SDPA fallback)."
