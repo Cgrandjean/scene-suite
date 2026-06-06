@@ -12,7 +12,7 @@ model backends — clone it on a fresh GPU pod and run one command.
 ## Quickstart on a fresh GPU pod (A100 80GB)
 
 ```bash
-git clone <this-repo-url> scene-suite && cd scene-suite
+git clone https://github.com/Cgrandjean/scene-suite.git && cd scene-suite
 bash scene-studio/scripts/deploy.sh          # Wan only  -> `animate`  (fast,  ~70 GB)
 # bash scene-studio/scripts/deploy.sh --all   # + Lyra     -> `travel`/`chain` (~+97 GB)
 ```
