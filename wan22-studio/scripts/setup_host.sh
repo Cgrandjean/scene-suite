@@ -59,30 +59,31 @@ pip install -r /tmp/wan_req.txt
 # Deps Wan's code imports but its requirements.txt omits.
 pip install einops decord librosa peft
 
-echo "== [4b/4] flash_attn (REQUIRED by Wan i2v; compiled from source) =="
-# Wan's model calls flash_attention() directly (assert FLASH_ATTN_2_AVAILABLE), so it
-# MUST be installed -- there is no SDPA fallback on that path. Needs nvcc + CUDA_HOME;
-# a CUDA 'devel' base image provides nvcc. Locate it.
-if [[ -z "${CUDA_HOME:-}" ]]; then
-  if command -v nvcc >/dev/null 2>&1; then
-    CUDA_HOME="$(dirname "$(dirname "$(command -v nvcc)")")"
-  elif [[ -x /usr/local/cuda/bin/nvcc ]]; then
-    CUDA_HOME=/usr/local/cuda
-  else
-    CUDA_HOME="$(ls -d /usr/local/cuda-* 2>/dev/null | sort -V | tail -1)"
-  fi
-fi
+echo "== [4b/4] flash_attn (REQUIRED by Wan i2v) =="
+# Wan's model calls flash_attention() directly (assert FLASH_ATTN_2_AVAILABLE) -- there
+# is NO SDPA fallback on that path, so flash_attn MUST be installed. Prefer a PREBUILT
+# wheel: most GPU images ship only the CUDA runtime (via torch), not nvcc/the toolkit,
+# so source compilation is usually impossible.
 if [[ "${WAN22_SKIP_FLASH:-0}" == "1" ]]; then
   echo "   WAN22_SKIP_FLASH=1 -> skipping (NOTE: Wan i2v generation will then FAIL)."
-elif [[ -n "${CUDA_HOME:-}" && -x "$CUDA_HOME/bin/nvcc" ]]; then
-  export CUDA_HOME
-  export PATH="$CUDA_HOME/bin:$PATH"
-  echo "   building flash_attn with CUDA_HOME=$CUDA_HOME (10-20 min)..."
-  MAX_JOBS="${MAX_JOBS:-8}" pip install flash_attn --no-build-isolation \
-    && echo "   flash_attn installed." \
-    || echo "   WARNING: flash_attn build FAILED -- Wan i2v will not run until it's installed."
 else
-  echo "   WARNING: nvcc not found -- cannot build flash_attn; use a CUDA 'devel' image."
+  FA_VER=2.8.3
+  TVER="$(python -c 'import torch;print(".".join(torch.__version__.split("+")[0].split(".")[:2]))')"
+  PYTAG="$(python -c 'import sys;print(f"cp{sys.version_info.major}{sys.version_info.minor}")')"
+  ABI="$(python -c 'import torch;print("TRUE" if torch._C._GLIBCXX_USE_CXX11_ABI else "FALSE")')"
+  WHL="https://github.com/Dao-AILab/flash-attention/releases/download/v${FA_VER}/flash_attn-${FA_VER}+cu12torch${TVER}cxx11abi${ABI}-${PYTAG}-${PYTAG}-linux_x86_64.whl"
+  echo "   trying prebuilt wheel (torch ${TVER}, ${PYTAG}, abi${ABI})..."
+  if pip install "$WHL"; then
+    echo "   flash_attn installed (prebuilt wheel)."
+  elif command -v nvcc >/dev/null 2>&1; then
+    echo "   wheel unavailable; compiling from source..."
+    export CUDA_HOME="${CUDA_HOME:-$(dirname "$(dirname "$(command -v nvcc)")")}"
+    MAX_JOBS="${MAX_JOBS:-8}" pip install flash_attn --no-build-isolation \
+      && echo "   flash_attn compiled." \
+      || echo "   WARNING: flash_attn install FAILED -- Wan i2v will not run."
+  else
+    echo "   WARNING: no matching prebuilt wheel and no nvcc -- flash_attn NOT installed; Wan i2v will fail."
+  fi
 fi
 
 cat <<EOF
