@@ -59,21 +59,30 @@ pip install -r /tmp/wan_req.txt
 # Deps Wan's code imports but its requirements.txt omits.
 pip install einops decord librosa peft
 
-echo "== [4b/4] flash_attn (optional speed-up; skipped if it can't build) =="
-# flash_attn needs nvcc + CUDA_HOME to compile from source. The CUDA devel base image
-# ships it at /usr/local/cuda. If absent, we skip it -- generation still works (SDPA).
-CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
+echo "== [4b/4] flash_attn (REQUIRED by Wan i2v; compiled from source) =="
+# Wan's model calls flash_attention() directly (assert FLASH_ATTN_2_AVAILABLE), so it
+# MUST be installed -- there is no SDPA fallback on that path. Needs nvcc + CUDA_HOME;
+# a CUDA 'devel' base image provides nvcc. Locate it.
+if [[ -z "${CUDA_HOME:-}" ]]; then
+  if command -v nvcc >/dev/null 2>&1; then
+    CUDA_HOME="$(dirname "$(dirname "$(command -v nvcc)")")"
+  elif [[ -x /usr/local/cuda/bin/nvcc ]]; then
+    CUDA_HOME=/usr/local/cuda
+  else
+    CUDA_HOME="$(ls -d /usr/local/cuda-* 2>/dev/null | sort -V | tail -1)"
+  fi
+fi
 if [[ "${WAN22_SKIP_FLASH:-0}" == "1" ]]; then
-  echo "   WAN22_SKIP_FLASH=1 -> skipping flash_attn (Wan uses SDPA fallback)."
-elif [[ -x "$CUDA_HOME/bin/nvcc" ]]; then
+  echo "   WAN22_SKIP_FLASH=1 -> skipping (NOTE: Wan i2v generation will then FAIL)."
+elif [[ -n "${CUDA_HOME:-}" && -x "$CUDA_HOME/bin/nvcc" ]]; then
   export CUDA_HOME
   export PATH="$CUDA_HOME/bin:$PATH"
-  echo "   building flash_attn (this can take 10-20 min; set WAN22_SKIP_FLASH=1 to skip)..."
-  MAX_JOBS="${MAX_JOBS:-$(nproc)}" pip install flash_attn --no-build-isolation \
+  echo "   building flash_attn with CUDA_HOME=$CUDA_HOME (10-20 min)..."
+  MAX_JOBS="${MAX_JOBS:-8}" pip install flash_attn --no-build-isolation \
     && echo "   flash_attn installed." \
-    || echo "   flash_attn failed to build -- continuing WITHOUT it (Wan uses SDPA fallback)."
+    || echo "   WARNING: flash_attn build FAILED -- Wan i2v will not run until it's installed."
 else
-  echo "   no nvcc at $CUDA_HOME -- skipping flash_attn (Wan uses SDPA fallback)."
+  echo "   WARNING: nvcc not found -- cannot build flash_attn; use a CUDA 'devel' image."
 fi
 
 cat <<EOF
