@@ -57,7 +57,7 @@ echo "== [4/4] Wan 2.2 requirements =="
 grep -viE 'flash[-_]attn' requirements.txt > /tmp/wan_req.txt
 pip install -r /tmp/wan_req.txt
 # Deps Wan's code imports but its requirements.txt omits.
-pip install einops decord librosa
+pip install einops decord librosa peft
 
 echo "== [4b/4] flash_attn (optional speed-up; skipped if it can't build) =="
 # flash_attn needs nvcc + CUDA_HOME to compile from source. The CUDA devel base image
