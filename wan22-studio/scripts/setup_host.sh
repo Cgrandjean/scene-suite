@@ -71,18 +71,18 @@ else
   TVER="$(python -c 'import torch;print(".".join(torch.__version__.split("+")[0].split(".")[:2]))')"
   PYTAG="$(python -c 'import sys;print(f"cp{sys.version_info.major}{sys.version_info.minor}")')"
   ABI="$(python -c 'import torch;print("TRUE" if torch._C._GLIBCXX_USE_CXX11_ABI else "FALSE")')"
-  WHL="https://github.com/Dao-AILab/flash-attention/releases/download/v${FA_VER}/flash_attn-${FA_VER}+cu12torch${TVER}cxx11abi${ABI}-${PYTAG}-${PYTAG}-linux_x86_64.whl"
-  echo "   trying prebuilt wheel (torch ${TVER}, ${PYTAG}, abi${ABI})..."
-  if pip install "$WHL"; then
-    echo "   flash_attn installed (prebuilt wheel)."
-  elif command -v nvcc >/dev/null 2>&1; then
-    echo "   wheel unavailable; compiling from source..."
-    export CUDA_HOME="${CUDA_HOME:-$(dirname "$(dirname "$(command -v nvcc)")")}"
-    MAX_JOBS="${MAX_JOBS:-8}" pip install flash_attn --no-build-isolation \
-      && echo "   flash_attn compiled." \
-      || echo "   WARNING: flash_attn install FAILED -- Wan i2v will not run."
+  _fa_url() { echo "https://github.com/Dao-AILab/flash-attention/releases/download/v${FA_VER}/flash_attn-${FA_VER}+cu12torch${TVER}cxx11abi$1-${PYTAG}-${PYTAG}-linux_x86_64.whl"; }
+  # The torch ABI flag is unreliable for picking the wheel -- a wrong pick imports with
+  # "undefined symbol: _ZN3c105Error...". So install, TEST the import, and flip ABI if needed.
+  _try_fa() { pip install --force-reinstall "$(_fa_url "$1")" >/dev/null 2>&1 && python -c "import flash_attn" 2>/dev/null; }
+  OTHER="$([[ "$ABI" == "TRUE" ]] && echo FALSE || echo TRUE)"
+  echo "   installing prebuilt wheel (torch ${TVER}, ${PYTAG}); trying abi${ABI} then abi${OTHER}..."
+  if _try_fa "$ABI"; then
+    echo "   flash_attn OK (abi${ABI})."
+  elif _try_fa "$OTHER"; then
+    echo "   flash_attn OK (abi${OTHER})."
   else
-    echo "   WARNING: no matching prebuilt wheel and no nvcc -- flash_attn NOT installed; Wan i2v will fail."
+    echo "   WARNING: no flash_attn wheel imported cleanly -- Wan i2v may fail (check torch/python versions)."
   fi
 fi
 
