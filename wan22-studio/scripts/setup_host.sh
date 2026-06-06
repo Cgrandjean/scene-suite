@@ -59,31 +59,26 @@ pip install -r /tmp/wan_req.txt
 # Deps Wan's code imports but its requirements.txt omits.
 pip install einops decord librosa peft
 
-echo "== [4b/4] flash_attn (REQUIRED by Wan i2v) =="
-# Wan's model calls flash_attention() directly (assert FLASH_ATTN_2_AVAILABLE) -- there
-# is NO SDPA fallback on that path, so flash_attn MUST be installed. Prefer a PREBUILT
-# wheel: most GPU images ship only the CUDA runtime (via torch), not nvcc/the toolkit,
-# so source compilation is usually impossible.
-if [[ "${WAN22_SKIP_FLASH:-0}" == "1" ]]; then
-  echo "   WAN22_SKIP_FLASH=1 -> skipping (NOTE: Wan i2v generation will then FAIL)."
-else
+echo "== [4b/4] flash_attn -- or SDPA fallback patch if it won't install =="
+# Wan's model.py calls flash_attention() directly. flash_attn is hard to install on
+# images without nvcc (prebuilt wheels often mismatch the torch ABI). So: try the
+# prebuilt wheel (both ABIs); if none IMPORTS, patch Wan to route attention through its
+# built-in PyTorch SDPA path -- slower, but works (torch SDPA uses efficient kernels).
+_fa_ok=0
+if [[ "${WAN22_SKIP_FLASH:-0}" != "1" ]]; then
   FA_VER=2.8.3
   TVER="$(python -c 'import torch;print(".".join(torch.__version__.split("+")[0].split(".")[:2]))')"
   PYTAG="$(python -c 'import sys;print(f"cp{sys.version_info.major}{sys.version_info.minor}")')"
   ABI="$(python -c 'import torch;print("TRUE" if torch._C._GLIBCXX_USE_CXX11_ABI else "FALSE")')"
-  _fa_url() { echo "https://github.com/Dao-AILab/flash-attention/releases/download/v${FA_VER}/flash_attn-${FA_VER}+cu12torch${TVER}cxx11abi$1-${PYTAG}-${PYTAG}-linux_x86_64.whl"; }
-  # The torch ABI flag is unreliable for picking the wheel -- a wrong pick imports with
-  # "undefined symbol: _ZN3c105Error...". So install, TEST the import, and flip ABI if needed.
-  _try_fa() { pip install --force-reinstall "$(_fa_url "$1")" >/dev/null 2>&1 && python -c "import flash_attn" 2>/dev/null; }
   OTHER="$([[ "$ABI" == "TRUE" ]] && echo FALSE || echo TRUE)"
-  echo "   installing prebuilt wheel (torch ${TVER}, ${PYTAG}); trying abi${ABI} then abi${OTHER}..."
-  if _try_fa "$ABI"; then
-    echo "   flash_attn OK (abi${ABI})."
-  elif _try_fa "$OTHER"; then
-    echo "   flash_attn OK (abi${OTHER})."
-  else
-    echo "   WARNING: no flash_attn wheel imported cleanly -- Wan i2v may fail (check torch/python versions)."
-  fi
+  _try_fa() { pip install --force-reinstall "https://github.com/Dao-AILab/flash-attention/releases/download/v${FA_VER}/flash_attn-${FA_VER}+cu12torch${TVER}cxx11abi$1-${PYTAG}-${PYTAG}-linux_x86_64.whl" >/dev/null 2>&1 && python -c "import flash_attn" 2>/dev/null; }
+  echo "   trying prebuilt flash_attn wheel (torch ${TVER}, ${PYTAG})..."
+  if _try_fa "$ABI" || _try_fa "$OTHER"; then _fa_ok=1; echo "   flash_attn OK."; fi
+fi
+if [[ "$_fa_ok" != 1 ]]; then
+  echo "   flash_attn unavailable -> patching Wan to use the PyTorch SDPA fallback."
+  pip uninstall -y flash-attn >/dev/null 2>&1 || true
+  sed -i 's/from \.attention import flash_attention/from .attention import attention as flash_attention/' wan/modules/model.py
 fi
 
 cat <<EOF
