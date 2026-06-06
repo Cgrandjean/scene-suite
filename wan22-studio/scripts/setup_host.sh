@@ -41,19 +41,34 @@ fi
 cd "$CLONE_DIR/Wan2.2"
 
 echo "== [2/4] Create conda env '$ENV_NAME' (python 3.10) =="
-conda create -n "$ENV_NAME" python=3.10 pip ffmpeg -c conda-forge -y
+if conda env list | awk '{print $1}' | grep -qx "$ENV_NAME"; then
+  echo "  env '$ENV_NAME' already exists; reusing it"
+else
+  conda create -n "$ENV_NAME" python=3.10 pip ffmpeg -c conda-forge -y
+fi
 conda activate "$ENV_NAME"
 
 echo "== [3/4] PyTorch (>=2.4, CUDA 12.4) =="
 pip install "torch>=2.4.0" torchvision --index-url https://download.pytorch.org/whl/cu124
 
-echo "== [4/4] Wan 2.2 requirements (flash_attn last if it chokes) =="
-# torch is installed first because flash_attn needs it present at build time.
-if ! pip install -r requirements.txt; then
-  echo "   requirements failed; retrying with flash_attn installed last..."
-  grep -viE 'flash[-_]attn' requirements.txt > /tmp/wan_req.txt
-  pip install -r /tmp/wan_req.txt
-  pip install flash_attn --no-build-isolation
+echo "== [4/4] Wan 2.2 requirements =="
+# Install everything EXCEPT flash_attn. flash_attn is OPTIONAL: Wan's attention module
+# falls back to torch's scaled_dot_product_attention when it's missing (just a warning).
+grep -viE 'flash[-_]attn' requirements.txt > /tmp/wan_req.txt
+pip install -r /tmp/wan_req.txt
+
+echo "== [4b/4] flash_attn (optional speed-up; skipped if it can't build) =="
+# flash_attn needs nvcc + CUDA_HOME to compile from source. The CUDA devel base image
+# ships it at /usr/local/cuda. If absent, we skip it -- generation still works (SDPA).
+CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
+if [[ -x "$CUDA_HOME/bin/nvcc" ]]; then
+  export CUDA_HOME
+  export PATH="$CUDA_HOME/bin:$PATH"
+  MAX_JOBS="${MAX_JOBS:-$(nproc)}" pip install flash_attn --no-build-isolation \
+    && echo "   flash_attn installed." \
+    || echo "   flash_attn failed to build -- continuing WITHOUT it (Wan uses SDPA fallback)."
+else
+  echo "   no nvcc at $CUDA_HOME -- skipping flash_attn (Wan uses SDPA fallback)."
 fi
 
 cat <<EOF
