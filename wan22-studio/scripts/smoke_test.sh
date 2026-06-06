@@ -16,11 +16,13 @@ PROMPT="A gentle breeze moves through the scene as it slowly comes to life, cine
 mkdir -p "$WAN22_HOME/outputs"
 
 echo "== Sanity: print the command that would run (no GPU needed) =="
-python -m wan22_studio.generate --dry-run --image "$IMG" --prompt "$PROMPT" --size "1280*720"
+python -m wan22_studio.generate --dry-run --image "$IMG" --prompt "$PROMPT" \
+  --size "832*480" --frames 49 --steps 10 --no-offload
 
 echo
-echo "== Real run on GPU (needs the A100 + downloaded weights) =="
-python -m wan22_studio.generate --image "$IMG" --prompt "$PROMPT" --size "1280*720" \
+echo "== Quick real run on GPU (480p, 10 steps -- just proves the stack works) =="
+python -m wan22_studio.generate --image "$IMG" --prompt "$PROMPT" \
+  --size "832*480" --frames 49 --steps 10 --no-offload \
   --save-file "$WAN22_HOME/outputs/smoke.mp4"
 
 echo

@@ -59,22 +59,40 @@ pip install -r /tmp/wan_req.txt
 # Deps Wan's code imports but its requirements.txt omits.
 pip install einops decord librosa peft
 
-echo "== [4b/4] flash_attn -- or SDPA fallback patch if it won't install =="
-# Wan's model.py calls flash_attention() directly. flash_attn is hard to install on
-# images without nvcc (prebuilt wheels often mismatch the torch ABI). So: try the
-# prebuilt wheel (both ABIs); if none IMPORTS, patch Wan to route attention through its
-# built-in PyTorch SDPA path -- slower, but works (torch SDPA uses efficient kernels).
+echo "== [4b/4] flash_attn  (wheel -> conda-nvcc compile -> SDPA fallback) =="
+# Wan's model.py calls flash_attention() directly. Get it working in 3 escalating ways,
+# so a fresh deploy ends with real flash_attn whenever possible.
 _fa_ok=0
 if [[ "${WAN22_SKIP_FLASH:-0}" != "1" ]]; then
+  _imp() { python -c "import flash_attn" 2>/dev/null; }
   FA_VER=2.8.3
   TVER="$(python -c 'import torch;print(".".join(torch.__version__.split("+")[0].split(".")[:2]))')"
   PYTAG="$(python -c 'import sys;print(f"cp{sys.version_info.major}{sys.version_info.minor}")')"
   ABI="$(python -c 'import torch;print("TRUE" if torch._C._GLIBCXX_USE_CXX11_ABI else "FALSE")')"
   OTHER="$([[ "$ABI" == "TRUE" ]] && echo FALSE || echo TRUE)"
-  _try_fa() { pip install --force-reinstall "https://github.com/Dao-AILab/flash-attention/releases/download/v${FA_VER}/flash_attn-${FA_VER}+cu12torch${TVER}cxx11abi$1-${PYTAG}-${PYTAG}-linux_x86_64.whl" >/dev/null 2>&1 && python -c "import flash_attn" 2>/dev/null; }
-  echo "   trying prebuilt flash_attn wheel (torch ${TVER}, ${PYTAG})..."
-  if _try_fa "$ABI" || _try_fa "$OTHER"; then _fa_ok=1; echo "   flash_attn OK."; fi
+  _try_whl() { pip install --force-reinstall "https://github.com/Dao-AILab/flash-attention/releases/download/v${FA_VER}/flash_attn-${FA_VER}+cu12torch${TVER}cxx11abi$1-${PYTAG}-${PYTAG}-linux_x86_64.whl" >/dev/null 2>&1 && _imp; }
+  # (a) fast path: prebuilt wheel (try both ABIs, test the import)
+  echo "   [a] prebuilt wheel (torch ${TVER}, ${PYTAG})..."
+  if _try_whl "$ABI" || _try_whl "$OTHER"; then _fa_ok=1; echo "   flash_attn OK (wheel)."; fi
+  # (b) reliable path: install nvcc via conda (matches torch's CUDA) and compile -- this
+  #     avoids the wheel ABI mismatch because it builds against the torch in THIS env.
+  if [[ "$_fa_ok" != 1 ]]; then
+    echo "   [b] no usable wheel -> installing CUDA toolkit via conda + compiling (~15-25 min)..."
+    CUVER="$(python -c 'import torch;print(torch.version.cuda or "12.4")')"
+    conda install -y -c nvidia "cuda-toolkit=${CUVER}" >/dev/null 2>&1 \
+      || conda install -y -c nvidia cuda-nvcc cuda-cudart-dev >/dev/null 2>&1 || true
+    export CUDA_HOME="$CONDA_PREFIX"; export PATH="$CUDA_HOME/bin:$PATH"
+    if command -v nvcc >/dev/null 2>&1; then
+      pip uninstall -y flash-attn >/dev/null 2>&1 || true
+      if MAX_JOBS="${MAX_JOBS:-8}" pip install flash_attn --no-build-isolation && _imp; then
+        _fa_ok=1; echo "   flash_attn OK (compiled from source)."
+      fi
+    else
+      echo "   nvcc still unavailable after conda install."
+    fi
+  fi
 fi
+# (c) last resort: route Wan through PyTorch SDPA -- always works, ~1.5x slower.
 if [[ "$_fa_ok" != 1 ]]; then
   echo "   flash_attn unavailable -> patching Wan to use the PyTorch SDPA fallback."
   pip uninstall -y flash-attn >/dev/null 2>&1 || true
