@@ -59,9 +59,10 @@ pip install -r /tmp/wan_req.txt
 # Deps Wan's code imports but its requirements.txt omits.
 pip install einops decord librosa peft
 
-echo "== [4b/4] flash_attn  (wheel -> conda-nvcc compile -> SDPA fallback) =="
-# Wan's model.py calls flash_attention() directly. Get it working in 3 escalating ways,
-# so a fresh deploy ends with real flash_attn whenever possible.
+echo "== [4b/4] flash_attn  (prebuilt wheel, else SDPA fallback) =="
+# Wan's model.py calls flash_attention() directly. Default = fast & reliable: try a
+# prebuilt wheel; if it won't import, route Wan through PyTorch SDPA (~1.5x slower).
+# Set WAN22_BUILD_FLASH=1 to ALSO try compiling from source (~25 min + conda CUDA toolkit).
 _fa_ok=0
 if [[ "${WAN22_SKIP_FLASH:-0}" != "1" ]]; then
   _imp() { python -c "import flash_attn" 2>/dev/null; }
@@ -76,8 +77,8 @@ if [[ "${WAN22_SKIP_FLASH:-0}" != "1" ]]; then
   if _try_whl "$ABI" || _try_whl "$OTHER"; then _fa_ok=1; echo "   flash_attn OK (wheel)."; fi
   # (b) reliable path: install nvcc via conda (matches torch's CUDA) and compile -- this
   #     avoids the wheel ABI mismatch because it builds against the torch in THIS env.
-  if [[ "$_fa_ok" != 1 ]]; then
-    echo "   [b] no usable wheel -> installing CUDA toolkit via conda + compiling (~15-25 min)..."
+  if [[ "$_fa_ok" != 1 && "${WAN22_BUILD_FLASH:-0}" == "1" ]]; then
+    echo "   [b] WAN22_BUILD_FLASH=1 -> installing CUDA toolkit via conda + compiling (~15-25 min)..."
     CUVER="$(python -c 'import torch;print(torch.version.cuda or "12.4")')"
     conda install -y -c nvidia "cuda-toolkit=${CUVER}" >/dev/null 2>&1 \
       || conda install -y -c nvidia cuda-nvcc cuda-cudart-dev >/dev/null 2>&1 || true
