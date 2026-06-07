@@ -70,12 +70,16 @@ pip install torch==2.7.1 torchvision==0.22.1 --extra-index-url https://download.
 echo "== [5/8] Build environment variables =="
 SITE="$CONDA_PREFIX/lib/python3.10/site-packages"
 export CPATH="$CUDA_HOME/include:$SITE/nvidia/cudnn/include:$SITE/nvidia/nccl/include:${CPATH:-}"
-export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$SITE/torch/lib:$SITE/nvidia/cuda_runtime/lib:$SITE/nvidia/cudnn/lib:$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}"
+# Canonical lib path, WITHOUT the pre-existing $LD_LIBRARY_PATH. Baking this fixed string
+# into the env is idempotent: re-running setup (or re-deploying) won't keep prepending
+# duplicate copies the way baking the accumulated $LD_LIBRARY_PATH did.
+_LD_CANON="$CONDA_PREFIX/lib:$SITE/torch/lib:$SITE/nvidia/cuda_runtime/lib:$SITE/nvidia/cudnn/lib:$CUDA_HOME/lib64"
+export LD_LIBRARY_PATH="$_LD_CANON:${LD_LIBRARY_PATH:-}"
 export CC="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-gcc"
 export CXX="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++"
-# Bake LD_LIBRARY_PATH into the env so `conda activate $ENV_NAME` sets it automatically --
-# Lyra needs it at runtime to find CUDA libs (else "library not found" in every new shell).
-conda env config vars set LD_LIBRARY_PATH="$LD_LIBRARY_PATH" >/dev/null 2>&1 || true
+# Bake the CANONICAL path into the env so `conda activate $ENV_NAME` sets it automatically
+# (Lyra needs it at runtime to find CUDA libs, else "library not found" in every new shell).
+conda env config vars set LD_LIBRARY_PATH="$_LD_CANON" >/dev/null 2>&1 || true
 
 # Parallelise the source builds (flash-attn / transformer-engine / extensions) across
 # all cores, but cap by RAM (~4GB per nvcc job) so the flash-attn compile doesn't OOM.
