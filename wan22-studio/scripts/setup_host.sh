@@ -46,7 +46,7 @@ if conda env list | awk '{print $1}' | grep -qx "$ENV_NAME"; then
 else
   conda create -n "$ENV_NAME" python=3.10 pip ffmpeg -c conda-forge -y
 fi
-conda activate "$ENV_NAME"
+set +u; conda activate "$ENV_NAME"; set -u   # conda activate scripts may use unbound vars
 
 echo "== [3/4] PyTorch (>=2.4, CUDA 12.4) =="
 pip install "torch>=2.4.0" torchvision --index-url https://download.pytorch.org/whl/cu124
