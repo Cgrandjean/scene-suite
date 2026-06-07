@@ -46,6 +46,19 @@ def _resolve(path: str, what: str) -> str:
     return str(p)
 
 
+def _check_frames(n: int, flag: str) -> None:
+    # Lyra's autoregressive pipeline requires (num_frames - 1) to be a multiple of
+    # tokens_per_step * frames_per_latent (= 80 for this model); 81/161/241 are the usual
+    # valid values. Fail fast with a clear message instead of a cryptic deep assertion.
+    if (n - 1) % 80:
+        up = n + (80 - (n - 1) % 80)
+        opts = [v for v in (up - 80, up) if v >= 81] or [81]
+        raise SystemExit(
+            f"{flag}={n} is invalid: Lyra needs (frames - 1) divisible by 80. "
+            f"Nearest valid: {', '.join(map(str, opts))}  (valid set: 81, 161, 241, 321, ...)."
+        )
+
+
 def _engine_args(a: argparse.Namespace) -> list[str]:
     """Flags shared by both inference scripts (quality / batch / perf). Each is only
     forwarded when the user set it, so the inference keeps its own (mode-specific)
@@ -81,6 +94,8 @@ def _engine_args(a: argparse.Namespace) -> list[str]:
 def run_preset(settings: Settings, a: argparse.Namespace) -> int:
     if not a.prompt and not a.prompt_dir:
         raise SystemExit('preset needs --prompt "..." or --prompt-dir <folder of *.txt>')
+    _check_frames(a.num_frames_zoom_in, "--num-frames-zoom-in")
+    _check_frames(a.num_frames_zoom_out, "--num-frames-zoom-out")
     args = [
         "--input_image_path", _resolve(a.image, "--image"),
         "--checkpoint_dir", settings.checkpoint_dir,
@@ -104,6 +119,7 @@ def run_preset(settings: Settings, a: argparse.Namespace) -> int:
 
 
 def run_custom(settings: Settings, a: argparse.Namespace) -> int:
+    _check_frames(a.num_frames, "--num-frames")
     args = [
         "--input_image_path", _resolve(a.image, "--image"),
         "--trajectory_path", _resolve(a.trajectory, "--trajectory"),
@@ -168,8 +184,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--prompt", help="caption describing the (static) scene")
     p.add_argument("--prompt-dir", help="folder of <image_stem>.txt captions instead of --prompt")
     p.add_argument("--output-path", default="outputs/zoomgs")
-    p.add_argument("--num-frames-zoom-in", type=int, default=81)
-    p.add_argument("--num-frames-zoom-out", type=int, default=241)
+    p.add_argument("--num-frames-zoom-in", type=int, default=81, help="(frames-1) must be a multiple of 80: 81, 161, 241")
+    p.add_argument("--num-frames-zoom-out", type=int, default=241, help="(frames-1) must be a multiple of 80: 81, 161, 241")
     p.add_argument("--zoom-in-strength", type=float, default=0.5, help="zoom-in motion magnitude (low = subtle/stable)")
     p.add_argument("--zoom-out-strength", type=float, default=1.5, help="zoom-out motion magnitude")
     p.add_argument("--zoom-in-direction", default="right", choices=["left", "right", "up", "down"])
@@ -182,7 +198,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--prompt", help="single caption applied to the whole clip")
     p.add_argument("--prompt-dir", help="folder of <image_stem>.txt captions")
     p.add_argument("--output-path", default="outputs/custom_traj")
-    p.add_argument("--num-frames", type=int, default=161)
+    p.add_argument("--num-frames", type=int, default=161, help="(frames-1) must be a multiple of 80: 81, 161, 241; match the trajectory's --frames")
     p.add_argument("--pose-scale", type=float, default=1.1, help="scale the trajectory translation (low = subtle)")
 
     return parser
