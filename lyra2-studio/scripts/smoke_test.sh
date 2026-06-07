@@ -13,14 +13,14 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 echo "== Sanity: print the command that would run (no GPU needed) =="
-python -m lyra2_studio.generate --dry-run --use-dmd preset \
+python -m lyra2_studio.generate --no-timestamp --dry-run --use-dmd preset \
   --image "$LYRA2_HOME/assets/samples/04.png" \
   --prompt "A cinematic drone shot glides forward through a sun-drenched ancient stone amphitheater." \
   --output-path outputs/smoke
 
 echo
 echo "== Running the real thing on GPU (this needs an NVIDIA GPU + downloaded weights) =="
-python -m lyra2_studio.generate --use-dmd preset \
+python -m lyra2_studio.generate --no-timestamp --use-dmd preset \
   --image "$LYRA2_HOME/assets/samples/04.png" \
   --prompt "A cinematic drone shot glides forward through a sun-drenched ancient stone amphitheater." \
   --output-path outputs/smoke

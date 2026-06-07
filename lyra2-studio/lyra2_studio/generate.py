@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import shlex
+from datetime import datetime
 from pathlib import Path
 
 from .config import Settings
@@ -171,6 +172,8 @@ def _add_engine_args(parser: argparse.ArgumentParser) -> None:
     b.add_argument("--experiment", default="lyra2", help="inference experiment config name")
     b.add_argument("--raw", default=None,
                    help='forward arbitrary extra inference flags verbatim, e.g. --raw "--ground_plane_align"')
+    b.add_argument("--no-timestamp", action="store_true",
+                   help="don't append -YYYYMMDD-HHMMSS to --output-path (by default it's added so reruns don't overwrite)")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -207,6 +210,9 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     a = _build_parser().parse_args(argv)
     settings = Settings.from_env()
+    # Stamp the output dir so reruns don't overwrite previous results (opt out: --no-timestamp).
+    if not a.no_timestamp:
+        a.output_path = f"{a.output_path.rstrip('/')}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     if a.mode == "preset":
         return run_preset(settings, a)
     return run_custom(settings, a)
