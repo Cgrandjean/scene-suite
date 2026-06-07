@@ -44,8 +44,12 @@ fi
 cd "$CLONE_DIR/lyra/Lyra-2"
 
 echo "== [2/8] Create conda env '$ENV_NAME' (python 3.10) =="
-conda create -n "$ENV_NAME" python=3.10 pip cmake ninja libgl ffmpeg packaging -c conda-forge -y
-conda activate "$ENV_NAME"
+if conda env list | awk '{print $1}' | grep -qx "$ENV_NAME"; then
+  echo "  env '$ENV_NAME' already exists; reusing it"
+else
+  conda create -n "$ENV_NAME" python=3.10 pip cmake ninja libgl ffmpeg packaging -c conda-forge -y
+fi
+set +u; conda activate "$ENV_NAME"; set -u
 CONDA_BACKUP_CXX="" conda install gcc=13.3.0 gxx=13.3.0 eigen zlib -c conda-forge -y
 
 echo "== [3/8] CUDA toolkit (12.8) inside the env =="

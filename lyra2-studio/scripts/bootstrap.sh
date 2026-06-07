@@ -50,31 +50,20 @@ mkdir -p "$CLONE_DIR"
 [[ -d "$CLONE_DIR/lyra/.git" ]] || git clone --recursive https://github.com/nv-tlabs/lyra.git "$CLONE_DIR/lyra"
 export LYRA2_HOME="$CLONE_DIR/lyra/Lyra-2"
 
-echo "== [3/5] Weight download in BACKGROUND (overlaps the env build) =="
-echo "   progress -> $REPO_ROOT/weights_download.log"
-( bash "$REPO_ROOT/scripts/download_weights.sh" ) > "$REPO_ROOT/weights_download.log" 2>&1 &
-DL_PID=$!
-
-echo "== [4/5] Build the conda env (compile-heavy; runs while weights download) =="
-# One-off generation test: skip the vipe build (video-pose / 3D-recon only; generation
-# does not import it). DA3 is still built -- generation needs it. Set LYRA2_SKIP_RECON=0
-# if you also want the reconstruct.py path.
+echo "== [3/5] Build the conda env (compile-heavy) =="
+# Skip the vipe build (video-pose / 3D-recon only; generation doesn't import it).
+# DA3 is still built. Set LYRA2_SKIP_RECON=0 if you also want reconstruct.py.
 export LYRA2_SKIP_RECON="${LYRA2_SKIP_RECON:-1}"
 bash "$REPO_ROOT/scripts/setup_host.sh" "$CLONE_DIR"
 
-echo "== Waiting for the weight download to finish... =="
-if wait "$DL_PID"; then
-  echo "   weights OK"
-else
-  echo "ERROR: weight download failed -- see $REPO_ROOT/weights_download.log" >&2
-  exit 1
-fi
-
-echo "== [5/5] Smoke test =="
-conda activate "$ENV_NAME"
+echo "== [4/5] Download weights (foreground, INSIDE the conda env -- reliable) =="
+set +u; conda activate "$ENV_NAME"; set -u
 # Re-export the runtime library path (setup_host.sh set this in its own process only).
 SITE="$CONDA_PREFIX/lib/python3.10/site-packages"
 export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$SITE/torch/lib:$SITE/nvidia/cuda_runtime/lib:$SITE/nvidia/cudnn/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+bash "$REPO_ROOT/scripts/download_weights.sh"
+
+echo "== [5/5] Smoke test =="
 bash "$REPO_ROOT/scripts/smoke_test.sh"
 
 cat <<EOF

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-shot deploy of Wan 2.2 image-to-video on a fresh A100 Linux box: installs
-# Miniconda if missing, clones Wan2.2, downloads the weights IN PARALLEL with the
-# env build, then runs the smoke test. One command, mostly unattended.
+# Miniconda if missing, clones Wan2.2, builds the conda env, downloads the weights
+# (from inside the env -- reliable), then runs a quick smoke test. One command.
 #
 # Usage (on the box):
 #   bash scripts/bootstrap.sh [/path/to/clone/dir]   # default: ~/wan-src
@@ -38,24 +38,16 @@ mkdir -p "$CLONE_DIR"
 [[ -d "$CLONE_DIR/Wan2.2/.git" ]] || git clone https://github.com/Wan-Video/Wan2.2.git "$CLONE_DIR/Wan2.2"
 export WAN22_HOME="$CLONE_DIR/Wan2.2"
 
-echo "== [3/5] Weight download in BACKGROUND (overlaps the env build) =="
-echo "   progress -> $REPO_ROOT/weights_download.log"
-( bash "$REPO_ROOT/scripts/download_weights.sh" ) > "$REPO_ROOT/weights_download.log" 2>&1 &
-DL_PID=$!
-
-echo "== [4/5] Build the conda env =="
+echo "== [3/5] Build the conda env =="
 bash "$REPO_ROOT/scripts/setup_host.sh" "$CLONE_DIR"
 
-echo "== Waiting for the weight download to finish... =="
-if wait "$DL_PID"; then
-  echo "   weights OK"
-else
-  echo "ERROR: weight download failed -- see $REPO_ROOT/weights_download.log" >&2
-  exit 1
-fi
+echo "== [4/5] Download weights (foreground, INSIDE the conda env -- reliable) =="
+# Running the download inside the env (which already has huggingface_hub) avoids the
+# system-Python / PEP-668 fragility that made the old background download flaky.
+set +u; conda activate "$ENV_NAME"; set -u
+bash "$REPO_ROOT/scripts/download_weights.sh"
 
 echo "== [5/5] Smoke test =="
-conda activate "$ENV_NAME"
 bash "$REPO_ROOT/scripts/smoke_test.sh"
 
 cat <<EOF
