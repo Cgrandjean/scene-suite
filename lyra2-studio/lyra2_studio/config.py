@@ -32,11 +32,20 @@ class Settings:
                 f"LYRA2_HOME={home_path} does not look like a Lyra-2 checkout "
                 "(no `lyra_2/` package found inside)."
             )
+        # Prefer the lyra2 env's interpreter for the inference subprocess. Launching the
+        # wrapper from `base`/system python is an easy trap (e.g. `conda activate lyra2`
+        # silently fails when conda isn't on PATH), yielding a cryptic "No module named
+        # 'cv2'". Falling back to the env's python makes it work regardless.
+        python_bin = os.environ.get("LYRA2_PYTHON")
+        if not python_bin:
+            env_name = os.environ.get("LYRA2_ENV", "lyra2")
+            cand = Path.home() / "miniconda3" / "envs" / env_name / "bin" / "python"
+            python_bin = str(cand) if cand.is_file() else sys.executable
         return cls(
             lyra2_home=home_path,
             checkpoint_dir=os.environ.get("LYRA2_CHECKPOINT_DIR", "checkpoints/model"),
             output_dir=Path(os.environ.get("LYRA2_OUTPUT_DIR", "outputs")),
-            python_bin=os.environ.get("LYRA2_PYTHON", sys.executable),
+            python_bin=python_bin,
         )
 
     def subprocess_env(self) -> dict:

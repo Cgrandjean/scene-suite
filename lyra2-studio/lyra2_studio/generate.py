@@ -43,6 +43,14 @@ def generate_preset(
 ) -> int:
     if not prompt and not prompt_dir:
         raise SystemExit("preset needs either --prompt \"...\" or --prompt-dir <folder of *.txt>")
+    # Resolve input paths to absolute NOW (against the caller's cwd) -- the inference
+    # subprocess runs in $LYRA2_HOME, so a relative --image would otherwise be looked up
+    # in the wrong directory and silently "not found".
+    image = str(Path(image).expanduser().resolve())
+    if not Path(image).exists():
+        raise SystemExit(f"--image not found: {image}")
+    if prompt_dir:
+        prompt_dir = str(Path(prompt_dir).expanduser().resolve())
     args = [
         "--input_image_path", image,
         "--experiment", experiment,
@@ -85,6 +93,15 @@ def generate_custom(
     use_dmd: bool = False,
     dry_run: bool = False,
 ) -> int:
+    # Resolve input paths to absolute (the inference subprocess runs in $LYRA2_HOME).
+    image = str(Path(image).expanduser().resolve())
+    if not Path(image).exists():
+        raise SystemExit(f"--image not found: {image}")
+    trajectory = str(Path(trajectory).expanduser().resolve())
+    if not Path(trajectory).exists():
+        raise SystemExit(f"--trajectory not found: {trajectory}")
+    if captions:
+        captions = str(Path(captions).expanduser().resolve())
     args = [
         "--input_image_path", image,
         "--trajectory_path", trajectory,
