@@ -87,6 +87,12 @@ echo "   MAX_JOBS=$MAX_JOBS  (cores=$_CORES, ram=${_RAMGB}GB)"
 
 echo "== [6/8] Python dependencies =="
 pip install --no-deps -r requirements.txt
+# requirements.txt is installed --no-deps to protect the pinned torch/CUDA stack, but that
+# skips pure-python transitive deps that (a) the editable builds need -- hatchling imports
+# pathspec/trove-classifiers -- and (b) Lyra's CLI needs -- tyro imports docstring-parser/
+# shtab/typeguard. Backfill them explicitly; none pull torch, so the pins stay safe.
+pip install pathspec trove-classifiers pluggy iniconfig execnet \
+            matplotlib-inline docstring-parser shtab typeguard
 pip install "git+https://github.com/microsoft/MoGe.git"
 pip install --no-build-isolation "transformer_engine[pytorch]"
 ln -sf "$SITE/nvidia/cuda_runtime" "$SITE/nvidia/cudart"
