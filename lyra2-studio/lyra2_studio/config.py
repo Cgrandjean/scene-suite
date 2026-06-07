@@ -54,6 +54,11 @@ class Settings:
         # Lyra's modules are imported relative to its own root.
         env["PYTHONPATH"] = "." if not existing else "." + os.pathsep + existing
         env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+        # Quieten log spam: libtorch C++ warnings (the per-conv "Could not initialize
+        # NNPACK" flood on server CPUs -- harmless, NNPACK just isn't used) and the
+        # Hugging Face tokenizers fork warning. setdefault so the user can override.
+        env.setdefault("TORCH_CPP_LOG_LEVEL", "ERROR")
+        env.setdefault("TOKENIZERS_PARALLELISM", "false")
         return env
 
     def run_module(self, module: str, args: list[str], *, dry_run: bool = False) -> int:
