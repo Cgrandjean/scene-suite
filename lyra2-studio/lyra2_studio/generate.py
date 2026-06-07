@@ -1,21 +1,34 @@
-"""Drive Lyra 2.0 inference to produce a video from a single image.
+"""Drive Lyra 2.0 inference to produce video(s) from a single image or a folder.
 
 Two entry points:
 
-* ``preset``  -> ``lyra2_zoomgs_inference``: easiest path. One image + one caption
-  produces a zoom-in and zoom-out walkthrough. Good for "just make me a video".
-* ``custom``  -> ``lyra2_custom_traj_inference``: full control. One image + a
-  ``trajectory.npz`` (see ``lyra2_studio.trajectory``) + optional per-chunk
-  ``captions.json`` follows exactly the camera path you designed.
+* ``preset``  -> ``lyra2_zoomgs_inference``: image(s) + caption -> a zoom-in/zoom-out
+  walkthrough. Easiest path ("just make me a video").
+* ``custom``  -> ``lyra2_custom_traj_inference``: image(s) + a ``trajectory.npz``
+  (see ``lyra2_studio.trajectory``) -> follows exactly the camera path you designed.
 
-Both run the official inference module inside ``$LYRA2_HOME`` via subprocess.
-Use ``--dry-run`` to print the exact command without executing it (handy on a
-machine without a GPU).
+INPUTS may be a single image OR a folder of images: the inference batches over up to
+``--num-samples`` of them. Pair a folder with ``--prompt-dir`` for per-image
+``<stem>.txt`` captions, or give one ``--prompt`` applied to all.
+
+QUALITY: drop ``--use-dmd`` (4-step distilled = fast but softer) to run the full
+``--steps`` diffusion; keep the camera motion small (low ``--zoom-*-strength`` /
+``--pose-scale``) for the sharpest, most stable result -- big moves expose occluded
+regions the model has to hallucinate. ``--dry-run`` prints the command without running.
+
+Engine flags (quality / batch / perf, shared by both modes) go BEFORE the subcommand;
+mode-specific flags go after it, e.g.::
+
+    python -m lyra2_studio.generate --steps 50 --guidance 6 preset --image x.png --prompt "..."
+
+Anything not exposed here can be forwarded verbatim to the inference with
+``--raw "--some_flag value"``.
 """
 
 from __future__ import annotations
 
 import argparse
+import shlex
 from pathlib import Path
 
 from .config import Settings
@@ -24,160 +37,163 @@ PRESET_MODULE = "lyra_2._src.inference.lyra2_zoomgs_inference"
 CUSTOM_MODULE = "lyra_2._src.inference.lyra2_custom_traj_inference"
 
 
-def generate_preset(
-    settings: Settings,
-    image: str,
-    *,
-    prompt: str | None = None,
-    prompt_dir: str | None = None,
-    output_path: str = "outputs/zoomgs",
-    experiment: str = "lyra2",
-    num_frames_zoom_in: int = 81,
-    num_frames_zoom_out: int = 241,
-    zoom_in_strength: float = 0.5,
-    zoom_out_strength: float = 1.5,
-    fps: int = 16,
-    seed: int = 1,
-    use_dmd: bool = False,
-    dry_run: bool = False,
-) -> int:
-    if not prompt and not prompt_dir:
-        raise SystemExit("preset needs either --prompt \"...\" or --prompt-dir <folder of *.txt>")
-    # Resolve input paths to absolute NOW (against the caller's cwd) -- the inference
-    # subprocess runs in $LYRA2_HOME, so a relative --image would otherwise be looked up
-    # in the wrong directory and silently "not found".
-    image = str(Path(image).expanduser().resolve())
-    if not Path(image).exists():
-        raise SystemExit(f"--image not found: {image}")
-    if prompt_dir:
-        prompt_dir = str(Path(prompt_dir).expanduser().resolve())
+def _resolve(path: str, what: str) -> str:
+    # The inference subprocess runs in $LYRA2_HOME, so resolve user paths to absolute
+    # against the caller's cwd NOW. A folder is allowed (the inference batches over it).
+    p = Path(path).expanduser().resolve()
+    if not p.exists():
+        raise SystemExit(f"{what} not found: {p}")
+    return str(p)
+
+
+def _engine_args(a: argparse.Namespace) -> list[str]:
+    """Flags shared by both inference scripts (quality / batch / perf). Each is only
+    forwarded when the user set it, so the inference keeps its own (mode-specific)
+    defaults otherwise (e.g. steps=50 for preset, 35 for custom)."""
+    out: list[str] = ["--seed", str(a.seed), "--fps", str(a.fps), "--experiment", a.experiment]
+    if a.use_dmd:
+        out.append("--use_dmd")
+    if a.steps is not None:
+        out += ["--num_sampling_step", str(a.steps)]
+    if a.guidance is not None:
+        out += ["--guidance", str(a.guidance)]
+    if a.shift is not None:
+        out += ["--shift", str(a.shift)]
+    if a.resolution:
+        out += ["--resolution", a.resolution]
+    if a.num_samples is not None:
+        out += ["--num_samples", str(a.num_samples)]
+    if a.sample_start_idx is not None:
+        out += ["--sample_start_idx", str(a.sample_start_idx)]
+    if a.prompt_suffix:
+        out += ["--prompt_suffix", a.prompt_suffix]
+    if a.offload:
+        out.append("--offload")
+    if a.lora_paths:
+        out += ["--lora_paths", *a.lora_paths]
+    if a.lora_weights:
+        out += ["--lora_weights", *[str(w) for w in a.lora_weights]]
+    if a.raw:
+        out += shlex.split(a.raw)
+    return out
+
+
+def run_preset(settings: Settings, a: argparse.Namespace) -> int:
+    if not a.prompt and not a.prompt_dir:
+        raise SystemExit('preset needs --prompt "..." or --prompt-dir <folder of *.txt>')
     args = [
-        "--input_image_path", image,
-        "--experiment", experiment,
+        "--input_image_path", _resolve(a.image, "--image"),
         "--checkpoint_dir", settings.checkpoint_dir,
-        "--output_path", output_path,
-        "--num_frames_zoom_in", str(num_frames_zoom_in),
-        "--num_frames_zoom_out", str(num_frames_zoom_out),
-        "--zoom_in_strength", str(zoom_in_strength),
-        "--zoom_out_strength", str(zoom_out_strength),
-        "--fps", str(fps),
-        "--seed", str(seed),
+        "--output_path", a.output_path,
+        "--num_frames_zoom_in", str(a.num_frames_zoom_in),
+        "--num_frames_zoom_out", str(a.num_frames_zoom_out),
+        "--zoom_in_strength", str(a.zoom_in_strength),
+        "--zoom_out_strength", str(a.zoom_out_strength),
+        "--zoom_in_direction", a.zoom_in_direction,
+        "--zoom_out_direction", a.zoom_out_direction,
     ]
-    if prompt:
-        args += ["--prompt", prompt]
-    if prompt_dir:
-        args += ["--prompt_dir", prompt_dir]
-    if use_dmd:
-        args.append("--use_dmd")
-    rc = settings.run_module(PRESET_MODULE, args, dry_run=dry_run)
-    if not dry_run and rc == 0:
-        stem = Path(image).stem
-        print(f"[lyra2-studio] combined video -> {output_path}/videos/{stem}.mp4")
+    if a.prompt:
+        args += ["--prompt", a.prompt]
+    if a.prompt_dir:
+        args += ["--prompt_dir", _resolve(a.prompt_dir, "--prompt-dir")]
+    args += _engine_args(a)
+    rc = settings.run_module(PRESET_MODULE, args, dry_run=a.dry_run)
+    if not a.dry_run and rc == 0:
+        print(f"[lyra2-studio] preset videos -> {a.output_path}/videos/")
     return rc
 
 
-def generate_custom(
-    settings: Settings,
-    image: str,
-    trajectory: str,
-    *,
-    captions: str | None = None,
-    prompt: str | None = None,
-    output_path: str = "outputs/custom_traj",
-    experiment: str = "lyra2",
-    num_frames: int = 161,
-    pose_scale: float = 1.1,
-    guidance: float = 5.0,
-    fps: int = 16,
-    seed: int = 1,
-    use_dmd: bool = False,
-    dry_run: bool = False,
-) -> int:
-    # Resolve input paths to absolute (the inference subprocess runs in $LYRA2_HOME).
-    image = str(Path(image).expanduser().resolve())
-    if not Path(image).exists():
-        raise SystemExit(f"--image not found: {image}")
-    trajectory = str(Path(trajectory).expanduser().resolve())
-    if not Path(trajectory).exists():
-        raise SystemExit(f"--trajectory not found: {trajectory}")
-    if captions:
-        captions = str(Path(captions).expanduser().resolve())
+def run_custom(settings: Settings, a: argparse.Namespace) -> int:
     args = [
-        "--input_image_path", image,
-        "--trajectory_path", trajectory,
-        "--experiment", experiment,
+        "--input_image_path", _resolve(a.image, "--image"),
+        "--trajectory_path", _resolve(a.trajectory, "--trajectory"),
         "--checkpoint_dir", settings.checkpoint_dir,
-        "--output_path", output_path,
-        "--num_frames", str(num_frames),
-        "--pose_scale", str(pose_scale),
-        "--guidance", str(guidance),
-        "--fps", str(fps),
-        "--seed", str(seed),
+        "--output_path", a.output_path,
+        "--num_frames", str(a.num_frames),
+        "--pose_scale", str(a.pose_scale),
     ]
-    if captions:
-        args += ["--captions_path", captions]
-    elif prompt:
-        args += ["--prompt", prompt]
-    if use_dmd:
-        args.append("--use_dmd")
-    rc = settings.run_module(CUSTOM_MODULE, args, dry_run=dry_run)
-    if not dry_run and rc == 0:
-        stem = Path(image).stem
-        print(f"[lyra2-studio] video -> {output_path}/{stem}.mp4")
+    if a.captions:
+        args += ["--captions_path", _resolve(a.captions, "--captions")]
+    elif a.prompt:
+        args += ["--prompt", a.prompt]
+    if a.prompt_dir:
+        args += ["--prompt_dir", _resolve(a.prompt_dir, "--prompt-dir")]
+    args += _engine_args(a)
+    rc = settings.run_module(CUSTOM_MODULE, args, dry_run=a.dry_run)
+    if not a.dry_run and rc == 0:
+        print(f"[lyra2-studio] custom videos -> {a.output_path}/")
     return rc
+
+
+def _add_engine_args(parser: argparse.ArgumentParser) -> None:
+    """Quality / batch / perf flags shared by both modes (placed on the top-level
+    parser so they come before the subcommand)."""
+    parser.add_argument("--dry-run", action="store_true",
+                        help="print the exact inference command instead of running it")
+    g = parser.add_argument_group("quality / sampling")
+    g.add_argument("--use-dmd", action="store_true",
+                   help="4-step DMD distillation: ~15x faster but softer. OMIT for full quality.")
+    g.add_argument("--steps", type=int, default=None,
+                   help="denoising steps (inference default 50 preset / 35 custom; ignored with --use-dmd)")
+    g.add_argument("--guidance", type=float, default=None,
+                   help="classifier-free guidance scale (default 5.0; higher = follows prompt more)")
+    g.add_argument("--shift", type=float, default=None, help="flow-matching shift (default 5.0)")
+    g.add_argument("--resolution", default=None,
+                   help='output resolution "H,W" (default 480,832; e.g. 720,1280 = sharper, more VRAM)')
+    g.add_argument("--seed", type=int, default=1, help="random seed (change to vary the result)")
+    g.add_argument("--lora-paths", nargs="+", default=None,
+                   help="LoRA .safetensors to apply (advanced; default = realism_boost + detail_enhancer)")
+    g.add_argument("--lora-weights", nargs="+", type=float, default=None, help="blend weight per LoRA")
+    b = parser.add_argument_group("batch (folder input) / misc")
+    b.add_argument("--num-samples", type=int, default=None,
+                   help="when --image is a FOLDER: how many images to process (default 10)")
+    b.add_argument("--sample-start-idx", type=int, default=None, help="folder batch start index")
+    b.add_argument("--prompt-suffix", default=None, help="text appended to every prompt")
+    b.add_argument("--fps", type=int, default=16, help="output frames per second")
+    b.add_argument("--offload", action="store_true",
+                   help="offload modules to CPU between stages (saves VRAM, slower)")
+    b.add_argument("--experiment", default="lyra2", help="inference experiment config name")
+    b.add_argument("--raw", default=None,
+                   help='forward arbitrary extra inference flags verbatim, e.g. --raw "--ground_plane_align"')
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Generate a Lyra 2.0 video from a single image")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="print the exact inference command instead of running it")
-    parser.add_argument("--use-dmd", action="store_true",
-                        help="4-step DMD distillation: ~15x faster, slightly lower quality")
-    parser.add_argument("--fps", type=int, default=16)
-    parser.add_argument("--seed", type=int, default=1)
-    parser.add_argument("--experiment", default="lyra2")
+    parser = argparse.ArgumentParser(
+        description="Generate Lyra 2.0 video(s) from an image or a folder of images")
+    _add_engine_args(parser)
     sub = parser.add_subparsers(dest="mode", required=True)
 
-    p = sub.add_parser("preset", help="image + caption -> zoom-in/zoom-out walkthrough")
-    p.add_argument("--image", required=True, help="path to a single input image")
+    p = sub.add_parser("preset", help="image(s) + caption -> zoom-in/zoom-out walkthrough")
+    p.add_argument("--image", required=True, help="input image OR folder of images")
     p.add_argument("--prompt", help="caption describing the (static) scene")
     p.add_argument("--prompt-dir", help="folder of <image_stem>.txt captions instead of --prompt")
     p.add_argument("--output-path", default="outputs/zoomgs")
     p.add_argument("--num-frames-zoom-in", type=int, default=81)
     p.add_argument("--num-frames-zoom-out", type=int, default=241)
-    p.add_argument("--zoom-in-strength", type=float, default=0.5)
-    p.add_argument("--zoom-out-strength", type=float, default=1.5)
+    p.add_argument("--zoom-in-strength", type=float, default=0.5, help="zoom-in motion magnitude (low = subtle/stable)")
+    p.add_argument("--zoom-out-strength", type=float, default=1.5, help="zoom-out motion magnitude")
+    p.add_argument("--zoom-in-direction", default="right", choices=["left", "right", "up", "down"])
+    p.add_argument("--zoom-out-direction", default="left", choices=["left", "right", "up", "down"])
 
-    p = sub.add_parser("custom", help="image + trajectory.npz -> camera path video")
-    p.add_argument("--image", required=True, help="path to the first-frame image")
+    p = sub.add_parser("custom", help="image(s) + trajectory.npz -> exact camera path")
+    p.add_argument("--image", required=True, help="first-frame image OR folder")
     p.add_argument("--trajectory", required=True, help="trajectory.npz (see lyra2_studio.trajectory)")
     p.add_argument("--captions", help="captions.json (per-chunk prompts)")
     p.add_argument("--prompt", help="single caption applied to the whole clip")
+    p.add_argument("--prompt-dir", help="folder of <image_stem>.txt captions")
     p.add_argument("--output-path", default="outputs/custom_traj")
     p.add_argument("--num-frames", type=int, default=161)
-    p.add_argument("--pose-scale", type=float, default=1.1)
-    p.add_argument("--guidance", type=float, default=5.0)
+    p.add_argument("--pose-scale", type=float, default=1.1, help="scale the trajectory translation (low = subtle)")
+
     return parser
 
 
 def main(argv=None) -> int:
-    args = _build_parser().parse_args(argv)
+    a = _build_parser().parse_args(argv)
     settings = Settings.from_env()
-    common = dict(experiment=args.experiment, fps=args.fps, seed=args.seed,
-                  use_dmd=args.use_dmd, dry_run=args.dry_run)
-    if args.mode == "preset":
-        return generate_preset(
-            settings, args.image, prompt=args.prompt, prompt_dir=args.prompt_dir,
-            output_path=args.output_path, num_frames_zoom_in=args.num_frames_zoom_in,
-            num_frames_zoom_out=args.num_frames_zoom_out,
-            zoom_in_strength=args.zoom_in_strength, zoom_out_strength=args.zoom_out_strength,
-            **common,
-        )
-    return generate_custom(
-        settings, args.image, args.trajectory, captions=args.captions, prompt=args.prompt,
-        output_path=args.output_path, num_frames=args.num_frames,
-        pose_scale=args.pose_scale, guidance=args.guidance, **common,
-    )
+    if a.mode == "preset":
+        return run_preset(settings, a)
+    return run_custom(settings, a)
 
 
 if __name__ == "__main__":
