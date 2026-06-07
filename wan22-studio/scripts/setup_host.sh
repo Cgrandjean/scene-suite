@@ -48,8 +48,10 @@ else
 fi
 set +u; conda activate "$ENV_NAME"; set -u   # conda activate scripts may use unbound vars
 
-echo "== [3/4] PyTorch (>=2.4, CUDA 12.4) =="
-pip install "torch>=2.4.0" torchvision --index-url https://download.pytorch.org/whl/cu124
+echo "== [3/4] PyTorch + torchvision + torchaudio (matched set, CUDA 12.4) =="
+# Pin the whole trio so Wan's unpinned 'torchaudio' can't pull a mismatched build that
+# breaks torchvision ops ("operator torchvision::nms does not exist").
+pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
 
 echo "== [4/4] Wan 2.2 requirements =="
 # Install everything EXCEPT flash_attn. flash_attn is OPTIONAL: Wan's attention module
