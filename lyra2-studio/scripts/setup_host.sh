@@ -92,7 +92,9 @@ pip install --no-build-isolation "transformer_engine[pytorch]"
 ln -sf "$SITE/nvidia/cuda_runtime" "$SITE/nvidia/cudart"
 
 echo "== [7/8] Flash Attention (compiles; takes a while) =="
-MAX_JOBS="${MAX_JOBS:-16}" pip install --no-build-isolation --no-binary :all: flash-attn==2.6.3
+# flash-attn's compile uses ~8-10GB RAM PER job; too many jobs OOM-kill the build (and
+# the tmux session) on a big box. Cap hard (slower but reliable). Override via FA_MAX_JOBS.
+MAX_JOBS="${FA_MAX_JOBS:-4}" pip install --no-build-isolation --no-binary :all: flash-attn==2.6.3
 
 echo "== [8/8] Vendored CUDA extensions =="
 # DA3 is required for generation (single-image depth), so it's always built.
