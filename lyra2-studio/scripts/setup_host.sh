@@ -53,7 +53,10 @@ set +u; conda activate "$ENV_NAME"; set -u
 CONDA_BACKUP_CXX="" conda install gcc=13.3.0 gxx=13.3.0 eigen zlib -c conda-forge -y
 
 echo "== [3/8] CUDA toolkit (12.8) inside the env =="
-conda install cuda -c nvidia/label/cuda-12.8.0 -y
+# --override-channels avoids the broken 'defaults' resolution that yields
+# "nothing provides __win needed by cuda" (+ cascading gcc conflicts). conda-forge
+# supplies the compiler deps the toolkit needs.
+conda install -y --override-channels -c nvidia/label/cuda-12.8.0 -c conda-forge cuda
 export CUDA_HOME="$CONDA_PREFIX"
 
 echo "== [4/8] PyTorch 2.7.1 (cu128) =="
@@ -65,6 +68,9 @@ export CPATH="$CUDA_HOME/include:$SITE/nvidia/cudnn/include:$SITE/nvidia/nccl/in
 export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$SITE/torch/lib:$SITE/nvidia/cuda_runtime/lib:$SITE/nvidia/cudnn/lib:$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}"
 export CC="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-gcc"
 export CXX="$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++"
+# Bake LD_LIBRARY_PATH into the env so `conda activate $ENV_NAME` sets it automatically --
+# Lyra needs it at runtime to find CUDA libs (else "library not found" in every new shell).
+conda env config vars set LD_LIBRARY_PATH="$LD_LIBRARY_PATH" >/dev/null 2>&1 || true
 
 # Parallelise the source builds (flash-attn / transformer-engine / extensions) across
 # all cores, but cap by RAM (~4GB per nvcc job) so the flash-attn compile doesn't OOM.
