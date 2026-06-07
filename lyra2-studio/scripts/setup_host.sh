@@ -59,6 +59,9 @@ echo "== [3/8] CUDA toolkit (12.8) inside the env =="
 # "nothing provides __win needed by cuda" (+ cascading gcc conflicts). conda-forge
 # supplies the compiler deps the toolkit needs.
 conda install -y --override-channels -c nvidia/label/cuda-12.8.0 -c conda-forge cuda
+# transformer-engine's source build needs the NVTX dev headers (nvtx3/nvToolsExt.h),
+# which the 'cuda' metapackage doesn't always pull in.
+conda install -y --override-channels -c nvidia/label/cuda-12.8.0 -c conda-forge cuda-nvtx-dev || true
 export CUDA_HOME="$CONDA_PREFIX"
 
 echo "== [4/8] PyTorch 2.7.1 (cu128) =="
