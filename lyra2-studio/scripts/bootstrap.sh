@@ -11,7 +11,8 @@
 # Usage (on the box):
 #   export HF_TOKEN=hf_xxx
 #   bash scripts/bootstrap.sh [/path/to/clone/dir]   # default: ~/lyra-src
-set -euo pipefail
+# No 'nounset' (-u): conda's CUDA/compiler activate+deactivate scripts use unbound vars.
+set -eo pipefail
 
 CLONE_DIR="${1:-$HOME/lyra-src}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -57,7 +58,7 @@ export LYRA2_SKIP_RECON="${LYRA2_SKIP_RECON:-1}"
 bash "$REPO_ROOT/scripts/setup_host.sh" "$CLONE_DIR"
 
 echo "== [4/5] Download weights (foreground, INSIDE the conda env -- reliable) =="
-set +u; conda activate "$ENV_NAME"; set -u
+conda activate "$ENV_NAME"
 # Re-export the runtime library path (setup_host.sh set this in its own process only).
 SITE="$CONDA_PREFIX/lib/python3.10/site-packages"
 export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$SITE/torch/lib:$SITE/nvidia/cuda_runtime/lib:$SITE/nvidia/cudnn/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"

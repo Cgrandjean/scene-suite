@@ -8,7 +8,9 @@
 #   bash scripts/setup_host.sh [/path/to/clone/dir]
 # After it finishes, set:
 #   export LYRA2_HOME=<clone_dir>/lyra/Lyra-2
-set -euo pipefail
+# No 'nounset' (-u): conda's CUDA/compiler activate+deactivate scripts reference
+# unbound vars (CONDA_BACKUP_GXX, NVCC_PREPEND_FLAGS, ...) and would abort the script.
+set -eo pipefail
 
 CLONE_DIR="${1:-$HOME/lyra-src}"
 ENV_NAME="${LYRA2_ENV:-lyra2}"
@@ -49,8 +51,8 @@ if conda env list | awk '{print $1}' | grep -qx "$ENV_NAME"; then
 else
   conda create -n "$ENV_NAME" python=3.10 pip cmake ninja libgl ffmpeg packaging -c conda-forge -y
 fi
-set +u; conda activate "$ENV_NAME"; set -u
-CONDA_BACKUP_CXX="" conda install gcc=13.3.0 gxx=13.3.0 eigen zlib -c conda-forge -y
+conda activate "$ENV_NAME"
+CONDA_BACKUP_CXX="" conda install -y --override-channels -c conda-forge gcc=13.3.0 gxx=13.3.0 eigen zlib
 
 echo "== [3/8] CUDA toolkit (12.8) inside the env =="
 # --override-channels avoids the broken 'defaults' resolution that yields
