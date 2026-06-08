@@ -14,7 +14,8 @@ MODEL="${LOCATE_MODEL:-nvidia/LocateAnything-3B}"
 
 # pip here may hit an externally-managed system Python (PEP 668) -- fall back gracefully.
 _pip() { pip install -U "$@" 2>/dev/null || pip install -U "$@" --break-system-packages; }
-command -v huggingface-cli >/dev/null 2>&1 || _pip "huggingface_hub[cli]" || true
+# transformers 4.57.1 needs huggingface_hub <1.0, so keep the CLI on that line too.
+command -v huggingface-cli >/dev/null 2>&1 || _pip "huggingface_hub<1.0" || true
 # hf_transfer = faster parallel downloads, only if it actually installs.
 if _pip hf_transfer >/dev/null 2>&1; then export HF_HUB_ENABLE_HF_TRANSFER=1; fi
 

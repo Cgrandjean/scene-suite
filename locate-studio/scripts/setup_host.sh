@@ -40,8 +40,11 @@ pip install torch==2.7.1 torchvision==0.22.1 --extra-index-url https://download.
 echo "== [3/3] LocateAnything deps + the locate_studio package =="
 # Versions from the model card; + accelerate/einops/sentencepiece/hf_hub that the custom
 # remote code and the HF loader need. numpy pinned <2 for decord 0.6 ABI compatibility.
-pip install transformers==4.57.1 "numpy<2" Pillow==11.1.0 opencv-python-headless==4.11.0.86 \
-            peft decord==0.6.0 lmdb==1.7.5 accelerate einops sentencepiece "huggingface_hub[cli]"
+# NB: transformers 4.57.1 requires huggingface_hub <1.0 -- pin it, or the import fails
+# with "huggingface-hub>=0.30,<1.0 is required ... found 1.x". (huggingface-cli still works.)
+pip install transformers==4.57.1 "huggingface_hub<1.0" "numpy<2" Pillow==11.1.0 \
+            opencv-python-headless==4.11.0.86 peft decord==0.6.0 lmdb==1.7.5 \
+            accelerate einops sentencepiece
 pip install -e "$REPO_ROOT"
 
 cat <<EOF
