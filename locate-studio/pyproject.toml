@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "locate-studio"
+version = "0.1.0"
+description = "Open-vocabulary object detection on images/videos with NVIDIA LocateAnything-3B"
+requires-python = ">=3.10"
+# Runtime deps are installed (pinned) by scripts/setup_host.sh -- intentionally not
+# duplicated here so `pip install -e .` doesn't re-resolve the carefully pinned stack.
+
+[tool.setuptools.packages.find]
+include = ["locate_studio*"]
