@@ -43,7 +43,9 @@ def _pick_device(device: str) -> str:
     return "cpu"
 
 
-_DTYPES = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
+_DTYPES = {"float16": torch.float16, "fp16": torch.float16,
+           "bfloat16": torch.bfloat16, "bf16": torch.bfloat16,
+           "float32": torch.float32, "fp32": torch.float32}
 
 
 def _resolve_dtype(dtype, device: str) -> "torch.dtype":
@@ -127,21 +129,38 @@ class LocateAnythingWorker:
             out.append(box)
         return out
 
-    def detect_labeled(self, image: Image.Image, categories: list[str], **kw) -> list[dict]:
+    @staticmethod
+    def _maybe_resize(image: Image.Image, max_size) -> Image.Image:
+        """Downscale so the longest side <= max_size (fewer vision tokens -> smaller
+        tensors & faster; key to dodging the MPS 4GB-tensor crash). Boxes stay correct
+        since the model returns [0,1000]-normalised coords."""
+        if not max_size:
+            return image
+        w, h = image.size
+        if max(w, h) <= max_size:
+            return image
+        s = max_size / max(w, h)
+        return image.resize((round(w * s), round(h * s)))
+
+    def detect_labeled(self, image: Image.Image, categories: list[str], *,
+                       max_size=None, **kw) -> list[dict]:
         """Detection with reliable per-box labels: query each category separately
         (so every returned box is unambiguously that class) and merge. N model calls."""
         w, h = image.size
+        img = self._maybe_resize(image, max_size)
         boxes: list[dict] = []
         for cat in categories:
-            boxes += self.parse_boxes(self.detect(image, [cat], **kw), w, h, label=cat)
+            boxes += self.parse_boxes(self.detect(img, [cat], **kw), w, h, label=cat)
         return boxes
 
-    def detect_fast(self, image: Image.Image, categories: list[str], **kw) -> list[dict]:
+    def detect_fast(self, image: Image.Image, categories: list[str], *,
+                    max_size=None, **kw) -> list[dict]:
         """Detection of ALL categories in ONE model call (~Nx fewer calls than
         detect_labeled -- key for video). Labels are best-effort (parsed from <ref> tags
         if the model emits them, else 'object')."""
         w, h = image.size
-        return self.parse_labeled_boxes(self.detect(image, categories, **kw), w, h)
+        img = self._maybe_resize(image, max_size)
+        return self.parse_labeled_boxes(self.detect(img, categories, **kw), w, h)
 
     @staticmethod
     def parse_labeled_boxes(answer: str, width: int, height: int) -> list[dict]:

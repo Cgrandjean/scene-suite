@@ -166,9 +166,9 @@ def main(argv=None) -> int:
     # Metal caps a single tensor at 2**32 bytes (4GB); fp16 (auto) + a downscale keep the
     # vision tensors under it. Auto-pick a safe input cap on MPS if the user didn't set one.
     if args.max_size == 0 and dev == "mps":
-        args.max_size = 768
+        args.max_size = 512
         print(f"[locate] mps -> fp16 + input capped to {args.max_size}px (Metal 4GB/tensor limit; "
-              f"lower --max-size if it still aborts, or use --device cpu)", file=sys.stderr)
+              f"lower --max-size (384/320) if it still aborts, or use --device cpu)", file=sys.stderr)
     print(f"[locate] loading {args.model} on {dev} ...", file=sys.stderr)
     worker = LocateAnythingWorker(args.model, device=args.device, dtype=args.dtype)
     return run_image(worker, args) if args.image else run_video(worker, args)
