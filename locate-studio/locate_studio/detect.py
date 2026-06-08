@@ -95,35 +95,40 @@ def run_video(worker, args) -> int:
     if not cap.isOpened():
         raise SystemExit(f"could not open video: {src}")
     fps = cap.get(cv2.CAP_PROP_FPS) or 24.0
-    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     out_dir = Path(args.out).expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     out_mp4 = out_dir / f"{src.stem}_annotated.mp4"
-    # Write EVERY frame at the ORIGINAL fps so the output is smooth (same length/speed as
-    # the input). Detection only runs every --stride frames; its boxes are "held" and drawn
-    # on the in-between frames. --stride 1 = detect on every frame (best tracking, slowest).
-    writer = cv2.VideoWriter(str(out_mp4), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
+    # Write H.264 via imageio-ffmpeg. cv2's mp4v output decodes as a green mess in QuickTime
+    # and isn't finalized cleanly on interrupt; H.264 plays everywhere. Every frame is written
+    # at the source fps (smooth); detection runs every --stride frames, boxes held in between.
+    try:
+        import imageio.v2 as imageio
+    except ImportError:
+        raise SystemExit("video output needs imageio: pip install imageio imageio-ffmpeg")
+    writer = imageio.get_writer(str(out_mp4), fps=fps, codec="libx264",
+                                quality=8, macro_block_size=None)
 
     boxes, per_frame, idx, n_det = [], [], 0, 0
-    while True:
-        ok, frame = cap.read()
-        if not ok:
-            break
-        if idx % args.stride == 0:
-            pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-            boxes = _query_one(worker, pil, args)
-            per_frame.append({"frame": idx, "boxes": boxes})
-            n_det += 1
-            if n_det % 10 == 0:
-                print(f"[locate]   detected on {n_det} frames (idx {idx})...", flush=True)
-        writer.write(_draw(frame, boxes))
-        idx += 1
-        if args.max_frames and idx >= args.max_frames:
-            break
-    cap.release()
-    writer.release()
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            if idx % args.stride == 0:
+                pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                boxes = _query_one(worker, pil, args)
+                per_frame.append({"frame": idx, "boxes": boxes})
+                n_det += 1
+                if n_det % 10 == 0:
+                    print(f"[locate]   detected on {n_det} frames (idx {idx})...", flush=True)
+            writer.append_data(cv2.cvtColor(_draw(frame, boxes), cv2.COLOR_BGR2RGB))
+            idx += 1
+            if args.max_frames and idx >= args.max_frames:
+                break
+    finally:
+        cap.release()
+        writer.close()   # finalize the mp4 (moov atom) even on early exit / interrupt
     (out_dir / f"{src.stem}.json").write_text(json.dumps(per_frame, indent=2))
     print(f"[locate] {idx} frames written, detection on {n_det} -> {out_mp4}  (+ {src.stem}.json)")
     return 0

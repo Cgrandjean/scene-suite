@@ -44,7 +44,7 @@ echo "== [3/3] LocateAnything deps + the locate_studio package =="
 # with "huggingface-hub>=0.30,<1.0 is required ... found 1.x". (huggingface-cli still works.)
 pip install transformers==4.57.1 "huggingface_hub<1.0" "numpy<2" Pillow==11.1.0 \
             opencv-python-headless==4.11.0.86 peft decord==0.6.0 lmdb==1.7.5 \
-            accelerate einops sentencepiece
+            accelerate einops sentencepiece imageio imageio-ffmpeg
 pip install -e "$REPO_ROOT"
 
 cat <<EOF
