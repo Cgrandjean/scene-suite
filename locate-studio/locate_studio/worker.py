@@ -28,6 +28,8 @@ _TMPL = {
 }
 # Boxes come back normalised to [0, 1000] as <box><x1><y1><x2><y2></box>.
 _BOX_RE = re.compile(r"<box><(\d+)><(\d+)><(\d+)><(\d+)></box>")
+# For multi-class single-call parsing: a <ref>label</ref> tag OR a <box>.
+_REF_OR_BOX = re.compile(r"<ref>(.*?)</ref>|<box><(\d+)><(\d+)><(\d+)><(\d+)></box>")
 
 
 def _pick_device(device: str) -> str:
@@ -114,9 +116,33 @@ class LocateAnythingWorker:
 
     def detect_labeled(self, image: Image.Image, categories: list[str], **kw) -> list[dict]:
         """Detection with reliable per-box labels: query each category separately
-        (so every returned box is unambiguously that class) and merge."""
+        (so every returned box is unambiguously that class) and merge. N model calls."""
         w, h = image.size
         boxes: list[dict] = []
         for cat in categories:
             boxes += self.parse_boxes(self.detect(image, [cat], **kw), w, h, label=cat)
         return boxes
+
+    def detect_fast(self, image: Image.Image, categories: list[str], **kw) -> list[dict]:
+        """Detection of ALL categories in ONE model call (~Nx fewer calls than
+        detect_labeled -- key for video). Labels are best-effort (parsed from <ref> tags
+        if the model emits them, else 'object')."""
+        w, h = image.size
+        return self.parse_labeled_boxes(self.detect(image, categories, **kw), w, h)
+
+    @staticmethod
+    def parse_labeled_boxes(answer: str, width: int, height: int) -> list[dict]:
+        """Like parse_boxes, but tag each <box> with the most recent <ref>label</ref>
+        the model emitted (falls back to 'object' when there's none)."""
+        out, current = [], None
+        for m in _REF_OR_BOX.finditer(answer):
+            if m.group(1) is not None:
+                current = m.group(1).strip() or None
+                continue
+            x1, y1, x2, y2 = (int(m.group(i)) for i in range(2, 6))
+            out.append({
+                "x1": round(x1 / 1000 * width, 1), "y1": round(y1 / 1000 * height, 1),
+                "x2": round(x2 / 1000 * width, 1), "y2": round(y2 / 1000 * height, 1),
+                "label": current or "object",
+            })
+        return out

@@ -52,6 +52,8 @@ def _query_one(worker, pil_img, args) -> list[dict]:
               temperature=args.temperature)
     if args.classes:
         cats = [c.strip() for c in args.classes.split(",") if c.strip()]
+        if args.fast:
+            return worker.detect_fast(pil_img, cats, **kw)
         return worker.detect_labeled(pil_img, cats, **kw)
     w, h = pil_img.size
     answer = (worker.point(pil_img, args.query, **kw) if args.point
@@ -126,6 +128,8 @@ def _build_parser() -> argparse.ArgumentParser:
     what.add_argument("--classes", help='comma-separated open-vocab categories, e.g. "person,car,dog"')
     what.add_argument("--query", help='a single referring phrase, e.g. "the man in red" (grounding)')
     p.add_argument("--point", action="store_true", help="with --query: point at it instead of boxing it")
+    p.add_argument("--fast", action="store_true",
+                   help="detect all --classes in ONE call per frame (~Nx faster, key for video on MPS/CPU; labels best-effort)")
     p.add_argument("--out", default="outputs/locate", help="output directory")
     p.add_argument("--stride", type=int, default=5, help="[video] detect every Nth frame (boxes held in between); 1 = every frame")
     p.add_argument("--max-frames", type=int, default=0, help="[video] stop after reading this many input frames (0 = whole clip)")
