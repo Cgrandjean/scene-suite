@@ -25,8 +25,8 @@ from PIL import Image
 from .worker import DEFAULT_MODEL, LocateAnythingWorker, _pick_device
 
 # Distinct BGR colors cycled per label.
-_PALETTE = [(56, 56, 255), (56, 255, 56), (255, 144, 30), (56, 255, 255),
-            (255, 56, 200), (0, 165, 255), (200, 200, 0), (128, 0, 255)]
+# green, blue, red (BGR) -- cycled per label
+_PALETTE = [(0, 255, 0), (255, 0, 0), (0, 0, 255)]
 
 
 def _color(label: str) -> tuple:
