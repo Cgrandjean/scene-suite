@@ -43,14 +43,27 @@ def _pick_device(device: str) -> str:
     return "cpu"
 
 
+_DTYPES = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
+
+
+def _resolve_dtype(dtype, device: str) -> "torch.dtype":
+    """Map a string/None precision to a torch dtype. Defaults per device: cuda=bf16,
+    mps=float16 (halves memory -> helps dodge Metal's 2**32-byte single-tensor limit),
+    cpu=float32."""
+    if isinstance(dtype, str) and dtype in _DTYPES:
+        return _DTYPES[dtype]
+    if dtype not in (None, "auto"):
+        return dtype
+    return {"cuda": torch.bfloat16, "mps": torch.float16}.get(device, torch.float32)
+
+
 class LocateAnythingWorker:
     """Stateful worker: load the model once, serve many perception queries."""
 
     def __init__(self, model_path: str = DEFAULT_MODEL, device: str = "auto",
                  dtype: "torch.dtype | None" = None):
         self.device = _pick_device(device)
-        # bf16 only really pays off on CUDA; MPS/CPU are safer (and often only work) in fp32.
-        self.dtype = dtype or (torch.bfloat16 if self.device == "cuda" else torch.float32)
+        self.dtype = _resolve_dtype(dtype, self.device)
         self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
         self.model = AutoModel.from_pretrained(

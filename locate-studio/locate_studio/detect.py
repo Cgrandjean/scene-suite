@@ -22,7 +22,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from .worker import DEFAULT_MODEL, LocateAnythingWorker
+from .worker import DEFAULT_MODEL, LocateAnythingWorker, _pick_device
 
 # Distinct BGR colors cycled per label.
 _PALETTE = [(56, 56, 255), (56, 255, 56), (255, 144, 30), (56, 255, 255),
@@ -47,18 +47,28 @@ def _draw(frame_bgr: np.ndarray, boxes: list[dict]) -> np.ndarray:
 
 
 def _query_one(worker, pil_img, args) -> list[dict]:
-    """Run the chosen task on one PIL image, return labeled pixel boxes."""
+    """Run the chosen task on one PIL image; boxes are returned in ORIGINAL pixels.
+    If --max-size is set we shrink what the MODEL sees (fewer vision tokens -> smaller
+    tensors, dodging Metal's 4GB/tensor cap and going faster), but parse boxes against the
+    original size since the model's coords are resolution-independent ([0,1000])."""
     kw = dict(generation_mode=args.generation_mode, max_new_tokens=args.max_new_tokens,
               temperature=args.temperature)
+    ow, oh = pil_img.size
+    img = pil_img
+    if args.max_size and max(ow, oh) > args.max_size:
+        s = args.max_size / max(ow, oh)
+        img = pil_img.resize((max(1, round(ow * s)), max(1, round(oh * s))), Image.LANCZOS)
     if args.classes:
         cats = [c.strip() for c in args.classes.split(",") if c.strip()]
         if args.fast:
-            return worker.detect_fast(pil_img, cats, **kw)
-        return worker.detect_labeled(pil_img, cats, **kw)
-    w, h = pil_img.size
-    answer = (worker.point(pil_img, args.query, **kw) if args.point
-              else worker.ground(pil_img, args.query, **kw))
-    return worker.parse_boxes(answer, w, h, label=args.query)
+            return worker.parse_labeled_boxes(worker.detect(img, cats, **kw), ow, oh)
+        out = []
+        for c in cats:
+            out += worker.parse_boxes(worker.detect(img, [c], **kw), ow, oh, label=c)
+        return out
+    ans = (worker.point(img, args.query, **kw) if args.point
+           else worker.ground(img, args.query, **kw))
+    return worker.parse_boxes(ans, ow, oh, label=args.query)
 
 
 def run_image(worker, args) -> int:
@@ -135,6 +145,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-frames", type=int, default=0, help="[video] stop after reading this many input frames (0 = whole clip)")
     p.add_argument("--model", default=DEFAULT_MODEL, help="HF repo id or local path")
     p.add_argument("--device", default="auto", help="auto|cuda|mps|cpu (auto: cuda->mps->cpu)")
+    p.add_argument("--dtype", default="auto", choices=["auto", "float16", "bfloat16", "float32"],
+                   help="precision (auto: bf16 cuda / fp16 mps / fp32 cpu)")
+    p.add_argument("--max-size", type=int, default=0,
+                   help="downscale longest side to N px before detection (0=off; auto 768 on mps for Metal's 4GB/tensor limit)")
     p.add_argument("--generation-mode", default="hybrid", help="model decoding mode (hybrid|...) ")
     p.add_argument("--max-new-tokens", type=int, default=2048)
     p.add_argument("--temperature", type=float, default=0.7)
@@ -143,8 +157,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None) -> int:
     args = _build_parser().parse_args(argv)
-    print(f"[locate] loading {args.model} on {args.device} ...", file=sys.stderr)
-    worker = LocateAnythingWorker(args.model, device=args.device)
+    dev = _pick_device(args.device)
+    # Metal caps a single tensor at 2**32 bytes (4GB); fp16 (auto) + a downscale keep the
+    # vision tensors under it. Auto-pick a safe input cap on MPS if the user didn't set one.
+    if args.max_size == 0 and dev == "mps":
+        args.max_size = 768
+        print(f"[locate] mps -> fp16 + input capped to {args.max_size}px (Metal 4GB/tensor limit; "
+              f"lower --max-size if it still aborts, or use --device cpu)", file=sys.stderr)
+    print(f"[locate] loading {args.model} on {dev} ...", file=sys.stderr)
+    worker = LocateAnythingWorker(args.model, device=args.device, dtype=args.dtype)
     return run_image(worker, args) if args.image else run_video(worker, args)
 
 
