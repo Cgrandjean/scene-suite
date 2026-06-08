@@ -55,3 +55,13 @@ Outputs land in `--out` (default `outputs/locate/`): `<name>_annotated.{png,mp4}
 the model answers with `<box><x1><y1><x2><y2></box>` tokens normalised to `[0,1000]`,
 which `parse_boxes` rescales to pixels. `detect.py` draws the boxes and writes JSON.
 Video is processed per frame (LocateAnything has no native video mode).
+
+## Running on Apple Silicon (Mac) — experimental
+LocateAnything is built for CUDA; on an M-series Mac it runs via PyTorch **MPS** (or CPU),
+slower and not guaranteed. `setup_host.sh` is Linux-only — set up the env by hand and mind:
+- **decord** has no arm64 wheel → use the fork: `pip install eva-decord`
+- keep **`huggingface_hub<1.0`** (transformers 4.57.1 rejects hub 1.x at import)
+- run with **`--device mps`** (fall back to `--device cpu` if an op is unsupported)
+- video is slow frame-by-frame → use **`--fast`** and a larger **`--stride`**
+
+For real throughput, especially on video, use a CUDA box.
