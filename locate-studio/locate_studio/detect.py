@@ -89,10 +89,12 @@ def run_video(worker, args) -> int:
     out_dir = Path(args.out).expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     out_mp4 = out_dir / f"{src.stem}_annotated.mp4"
-    writer = cv2.VideoWriter(str(out_mp4), cv2.VideoWriter_fourcc(*"mp4v"),
-                             max(1.0, fps / args.stride), (w, h))
+    # Write EVERY frame at the ORIGINAL fps so the output is smooth (same length/speed as
+    # the input). Detection only runs every --stride frames; its boxes are "held" and drawn
+    # on the in-between frames. --stride 1 = detect on every frame (best tracking, slowest).
+    writer = cv2.VideoWriter(str(out_mp4), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
 
-    per_frame, idx, done = [], 0, 0
+    boxes, per_frame, idx, n_det = [], [], 0, 0
     while True:
         ok, frame = cap.read()
         if not ok:
@@ -100,18 +102,18 @@ def run_video(worker, args) -> int:
         if idx % args.stride == 0:
             pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             boxes = _query_one(worker, pil, args)
-            writer.write(_draw(frame, boxes))
             per_frame.append({"frame": idx, "boxes": boxes})
-            done += 1
-            if done % 10 == 0:
-                print(f"[locate]   {done} frames done (idx {idx})...", flush=True)
-            if args.max_frames and done >= args.max_frames:
-                break
+            n_det += 1
+            if n_det % 10 == 0:
+                print(f"[locate]   detected on {n_det} frames (idx {idx})...", flush=True)
+        writer.write(_draw(frame, boxes))
         idx += 1
+        if args.max_frames and idx >= args.max_frames:
+            break
     cap.release()
     writer.release()
     (out_dir / f"{src.stem}.json").write_text(json.dumps(per_frame, indent=2))
-    print(f"[locate] {done} frames -> {out_mp4}  (+ {src.stem}.json)")
+    print(f"[locate] {idx} frames written, detection on {n_det} -> {out_mp4}  (+ {src.stem}.json)")
     return 0
 
 
@@ -125,8 +127,8 @@ def _build_parser() -> argparse.ArgumentParser:
     what.add_argument("--query", help='a single referring phrase, e.g. "the man in red" (grounding)')
     p.add_argument("--point", action="store_true", help="with --query: point at it instead of boxing it")
     p.add_argument("--out", default="outputs/locate", help="output directory")
-    p.add_argument("--stride", type=int, default=5, help="[video] run detection every Nth frame")
-    p.add_argument("--max-frames", type=int, default=0, help="[video] stop after this many processed frames (0 = all)")
+    p.add_argument("--stride", type=int, default=5, help="[video] detect every Nth frame (boxes held in between); 1 = every frame")
+    p.add_argument("--max-frames", type=int, default=0, help="[video] stop after reading this many input frames (0 = whole clip)")
     p.add_argument("--model", default=DEFAULT_MODEL, help="HF repo id or local path")
     p.add_argument("--device", default="auto", help="auto|cuda|mps|cpu (auto: cuda->mps->cpu)")
     p.add_argument("--generation-mode", default="hybrid", help="model decoding mode (hybrid|...) ")
