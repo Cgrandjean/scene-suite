@@ -150,7 +150,10 @@ class LocateAnythingWorker:
         out, current = [], None
         for m in _REF_OR_BOX.finditer(answer):
             if m.group(1) is not None:
-                current = m.group(1).strip() or None
+                lbl = m.group(1).strip()
+                # drop garbage refs that swallowed box tokens (the model's output isn't
+                # always cleanly <ref>label</ref>); such boxes fall back to 'object'.
+                current = lbl if (lbl and "<" not in lbl and ">" not in lbl) else None
                 continue
             x1, y1, x2, y2 = (int(m.group(i)) for i in range(2, 6))
             out.append({
