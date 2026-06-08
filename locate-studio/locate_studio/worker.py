@@ -30,18 +30,30 @@ _TMPL = {
 _BOX_RE = re.compile(r"<box><(\d+)><(\d+)><(\d+)><(\d+)></box>")
 
 
+def _pick_device(device: str) -> str:
+    """Resolve 'auto' to cuda -> mps (Apple Silicon) -> cpu."""
+    if device and device != "auto":
+        return device
+    if torch.cuda.is_available():
+        return "cuda"
+    if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 class LocateAnythingWorker:
     """Stateful worker: load the model once, serve many perception queries."""
 
-    def __init__(self, model_path: str = DEFAULT_MODEL, device: str = "cuda",
-                 dtype: torch.dtype = torch.bfloat16):
-        self.device = device
-        self.dtype = dtype
+    def __init__(self, model_path: str = DEFAULT_MODEL, device: str = "auto",
+                 dtype: "torch.dtype | None" = None):
+        self.device = _pick_device(device)
+        # bf16 only really pays off on CUDA; MPS/CPU are safer (and often only work) in fp32.
+        self.dtype = dtype or (torch.bfloat16 if self.device == "cuda" else torch.float32)
         self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
         self.model = AutoModel.from_pretrained(
-            model_path, torch_dtype=dtype, trust_remote_code=True,
-        ).to(device).eval()
+            model_path, torch_dtype=self.dtype, trust_remote_code=True,
+        ).to(self.device).eval()
 
     @torch.no_grad()
     def predict(self, image: Image.Image, question: str, *, generation_mode: str = "hybrid",

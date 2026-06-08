@@ -128,7 +128,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--stride", type=int, default=5, help="[video] run detection every Nth frame")
     p.add_argument("--max-frames", type=int, default=0, help="[video] stop after this many processed frames (0 = all)")
     p.add_argument("--model", default=DEFAULT_MODEL, help="HF repo id or local path")
-    p.add_argument("--device", default="cuda")
+    p.add_argument("--device", default="auto", help="auto|cuda|mps|cpu (auto: cuda->mps->cpu)")
     p.add_argument("--generation-mode", default="hybrid", help="model decoding mode (hybrid|...) ")
     p.add_argument("--max-new-tokens", type=int, default=2048)
     p.add_argument("--temperature", type=float, default=0.7)
