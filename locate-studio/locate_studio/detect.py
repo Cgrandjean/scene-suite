@@ -29,8 +29,15 @@ from .worker import DEFAULT_MODEL, LocateAnythingWorker, _pick_device
 _PALETTE = [(0, 255, 0), (255, 0, 0), (0, 0, 255)]
 
 
+_color_map: dict = {}
+
+
 def _color(label: str) -> tuple:
-    return _PALETTE[hash(label) % len(_PALETTE)]
+    # Assign palette colors in order of first appearance so distinct labels get distinct
+    # colors (hash-based assignment collided, e.g. "large minbar" == "chandelier").
+    if label not in _color_map:
+        _color_map[label] = _PALETTE[len(_color_map) % len(_PALETTE)]
+    return _color_map[label]
 
 
 def _draw(frame_bgr: np.ndarray, boxes: list[dict]) -> np.ndarray:
